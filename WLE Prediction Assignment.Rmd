@@ -110,9 +110,9 @@ The to be predicted label is a factor with 5 levels. So we are dealing with a cl
 
 I used cross validation when building the random forest model (10 resampling iterations). Furthermore I have separated the training data into a separate training set and test set. 
 
-```{r, fig.width = 5, fig.height = 7, cache = TRUE}
+```{r, fig.width = 5, fig.height = 7}
 ## We train the model
-rfModel <- train(classe ~ ., data = trainingData, ntree = 125, method = "rf", trControl = trainControl(method = "cv", number = 10, verboseIter = FALSE), prox = TRUE)
+rfModel <- train(classe ~ ., data = trainingData, ntree = 100, method = "rf", trControl = trainControl(method = "cv", number = 10, verboseIter = FALSE), prox = TRUE)
 knnModel <- train(classe ~ ., data = trainingData, method = "knn", preProcess = c("center", "scale"))
 ## We can look at the models
 print(rfModel)
