@@ -1,0 +1,203 @@
+---
+title: "Weight Lifting Exercises Prediction Assignment"
+author: "Remco Bekker"
+date: "4-2-2019"
+output: html_document
+---
+
+```{r, echo = FALSE}
+## Return a list of variables that are only filled in for the observations that have new_window = "yes"
+retrieveSummaryVariables <- function() {
+    summaryVariables <- character()
+    j <- 1
+    for (i in 1:ncol(data)) {
+        if (sum(is.na(data[data$new_window == "no", names(data)[i]])) == (nrow(data) - nrow(data[data$new_window == "yes",])) & sum(is.na(data[,names(data[i])])) < nrow(data)) {
+            summaryVariables[j] <- names(data)[i]
+            j <- j + 1
+        }
+    }
+    return(summaryVariables)
+}
+
+## Return a list of variables that contain only NA values
+retrieveEmptyVariables <- function() {
+    emptyVariables <- character()
+    j <- 1
+    for (i in 1:ncol(data)) {
+        if (sum(is.na(data[,names(data[i])])) == nrow(data)) {
+            emptyVariables[j] <- names(data)[i]
+            j <- j + 1
+        }
+    }
+    return(emptyVariables)
+}
+
+## Return a list of variables that contain some NA values
+retrieveVariablesContainingNAs <- function() {
+    variablesContainingNAs <- character()
+    j <- 1
+    for (i in 1:ncol(data)) {
+        if (sum(is.na(data[,names(data[i])])) > 0 & sum(is.na(data[,names(data[i])])) < nrow(data)) {
+            variablesContainingNAs[j] <- names(data)[i]
+            j <- j + 1
+        }
+    }
+    return(variablesContainingNAs)
+}
+```
+
+## Introduction
+This report is my elaboration of the Weight Lifting Exercises Prediction Assignment for the John Hopkins University Coursera Practical machine learning course. 
+
+Data was collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants while they were doing 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. Any of the other variables may be used to predict with. 
+This report describes:
+
+- How the model was built
+- How cross validation was used
+- What the expected out of sample error is
+- Which choices I made along the way
+- Prediction of the 20 different test cases
+
+The authors of te following paper http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/work.jsf?p1=11201 have been so kind to make the dataset available.
+
+``` {r}
+## We need the following libraries...
+library(caret)
+library(randomForest)
+## For reproducibility sake we set the seed
+set.seed(5000)
+## We read in the data that can be used for training and testing
+data <- read.csv("pml-training.csv", stringsAsFactors = FALSE, na.strings = c("", "NA", "#DIV/0!"))
+## The variable to be predicted is the "classe" variable and we turn that variable into a factor
+data$classe <- as.factor(data$classe)
+## The data in the testing dataset contains 20 observations that can be used for validating our prediction approach
+validationData <- read.csv("pml-testing.csv", stringsAsFactors = FALSE, na.strings = c("", "NA", "#DIV/0!"))
+```
+
+## Exploratory analyses results and study design
+In the appendix some exploratory analyses on the dataset have been performed. It turns out that the dataset contains two types of rows. Rows for which the "new_window" variable is "no" and those for which it is "yes". The latter contain a number of variables that contain summary statistics (average, standard deviation etc.). However, the provided test set only contains rows with "new_window" == "no". For this reason we will exclude the summary statistic variables.  
+
+Furthermore we slice the training dataset into a training and testset and use the provided test set as the validation set. 
+``` {r}
+## We don't use the first 7 columns as training or testing data as we are interested in prediction and not in understanding who or when an exercise was performed correctly.
+subsetData <- data[, 8:ncol(data)]
+## We also throw out the empty variables
+subsetData <- subsetData[, setdiff(names(subsetData), retrieveEmptyVariables())]
+## We want to create a dataset without the summary variables
+subsetObservationalData <- subsetData[, setdiff(names(subsetData), retrieveSummaryVariables())]
+## Next we create a training set and a test set so we can determine the out of sample error
+inTrain <- createDataPartition(subsetObservationalData$classe, p = 0.8, list = FALSE)
+trainingData <- subsetObservationalData[inTrain,]
+testData <- subsetObservationalData[-inTrain,]
+## The test set provided we will use as a validation set
+subsetValidationData <- validationData[, 8:ncol(validationData)]
+subsetValidationData <- subsetValidationData[, setdiff(names(subsetValidationData), retrieveEmptyVariables())]
+subsetValidationData <- subsetValidationData[, setdiff(names(subsetValidationData), retrieveSummaryVariables())]
+```
+
+## Model selection
+The to be predicted label is a factor with 5 levels. So we are dealing with a classification problem:
+
+- Linear regression is not well suited for a classification problem
+- Logistic regression is well suited for binary classification problems but we have 5 levels here
+- KNN is not optimal when the number of observations relative to the number of variables is low, but since we train the model with approximately 50 variables and about 15000 observations, it is an option
+- A classification tree based approach is also a good option
+- Since prediction is the goal and not interpretability, a random forest or boosting approach could be used
+- Random forest seems to produce a better accuracy than KNN so I will use the random forest model to predict the 20 cases in the validation set
+- A further extension could be to combine the 2 models but since the accuracy of the random forest model is so high I did not pursue this further
+
+I used cross validation when building the random forest model (10 resampling iterations). Furthermore I have separated the training data into a separate training set and test set. 
+
+```{r, fig.width = 5, fig.height = 7, cache = TRUE}
+## We train the model
+rfModel <- train(classe ~ ., data = trainingData, ntree = 125, method = "rf", trControl = trainControl(method = "cv", number = 10, verboseIter = FALSE), prox = TRUE)
+knnModel <- train(classe ~ ., data = trainingData, method = "knn", preProcess = c("center", "scale"))
+## We can look at the models
+print(rfModel)
+print(knnModel)
+## And visualize what what the most important variables are
+plot(varImp(rfModel))
+## And we test the model on the test set
+rfPredictions <- predict(object = rfModel, newdata = testData)
+knnPredictions <- predict(object = knnModel, newdata = testData)
+```
+
+## Visualizing 2 most important variables
+In the plot below it is shown that the two most important variables as determined by the random frorest algorithm do indeed have a very high explanatory power in terms of the classe label.
+```{r}
+## We can plot the 2 most important variables
+importantVariables <- varImp(rfModel)$importance 
+importantVariables$var <- rownames(varImp(rfModel)$importance)
+importantVariables <- importantVariables[order(importantVariables$Overall, decreasing = TRUE),]
+xvar <- rownames(importantVariables)[1]
+yvar <- rownames(importantVariables)[2]
+qplot(x = trainingData[, xvar], y = trainingData[, yvar], xlab = xvar, ylab = yvar, colour = trainingData$classe)
+```
+
+## Out of sample error
+Now that we have trained the model on the training data, we can determine the out of sample error by applying the model to the test data set and creating a confusion matrix to see the accuracy related statistics.
+```{r}
+confusionMatrix(rfPredictions, testData$classe)
+confusionMatrix(knnPredictions, testData$classe)
+```
+
+## Validation set predictions
+The final step is to put the training model to work on predicting the labels for the validation set.
+```{r}
+## Now that we have the final model, we can apply it to the validation set...
+validationPredictions <- predict(rfModel, cbind(subsetValidationData, validationData$num_window))
+## We print out the predicted labels
+print(validationPredictions)
+## If we join the validation data set with the original data set we can 
+## obtain the actual labels of the validation data set and create a confusion matrix. 
+validationDataOrder <- cbind(subsetValidationData, num_window = validationData$num_window)
+validationActualLabels <- unique(merge(x = validationData, y = data, by = "num_window", all.x = TRUE)[, c("num_window", "classe")])
+confusionMatrix(validationPredictions, validationActualLabels[match(validationDataOrder$num_window, validationActualLabels$num_window), "classe"])
+```
+
+# Appendix
+
+## Exploratory analyses
+
+``` {r}
+## There are in total 160 variables and 19622 observations
+nrow(data)
+names(data)
+## It turns out that "arm", "forearm", "belt" and "dumbbell" had sensors attached to them and for each these the same set of 38 variables exists
+names(data)[grepl("*_arm*", names(data))]
+names(data)[grepl("*_forearm*", names(data))]
+names(data)[grepl("*_belt*", names(data))]
+names(data)[grepl("*_dumbbell*", names(data))]
+## And for each of these there are roll, picth and yaw 9 variables (allthough pitch is for some variable misspelled)
+names(data)[grepl("*roll_arm*", names(data))]
+names(data)[grepl("*pitch_arm*", names(data))]
+names(data)[grepl("*picth_arm*", names(data))]
+names(data)[grepl("*yaw_arm*", names(data))]
+## And 11 variables relate to gyroscope, magnet and acceleration
+names(data)[grepl("*gyros_arm*", names(data))]
+names(data)[grepl("*magnet_arm*", names(data))]
+names(data)[grepl("*amplitude_arm*", names(data))]
+## Then there are 7 variables which are not measurements or calculations but rather detail the id of the observation, when the observation was done, who did the exercise and of which training window it was part and whether it was the last of a training window.
+names(data)[1:7]
+## And the last variable is the to be predicted variable "classe" which details whethere the exercice was performed correctly ("E") or not ("A" through "D")
+table(data$classe)
+## The observations pertain to 6 different people
+table(data$user_name)
+## There are 2 different new_window values, 406 of which have a "yes"
+table(data$new_window)
+## A number of variables only contain only NA values so these can be excluded from any analyses or modelling efforts. 
+## These are: "kurtosis_yaw_belt", "skewness_yaw_belt", "kurtosis_yaw_dumbbell", "skewness_yaw_dumbbell", 
+## "kurtosis_yaw_forearm" and "skewness_yaw_forearm".
+print("Following variables contain only NAs")
+print(retrieveEmptyVariables())
+## Some variables contain some NAs
+print("Following variables contain some NAs")
+print(retrieveVariablesContainingNAs())
+## Furthermore a number of variables are only filled for the observations that have a new_window value of yes. 
+## It seems that these variables are a sort of summary calculations performed on the observations in the window. 
+## In the data analysis it will be more insightful to model these two types of data separately.
+print("Following variables are only filled in for observations with new_window = 'yes'")
+print(retrieveSummaryVariables())
+```
