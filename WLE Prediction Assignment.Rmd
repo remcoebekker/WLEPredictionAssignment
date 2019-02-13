@@ -2,7 +2,9 @@
 title: "Weight Lifting Exercises Prediction Assignment"
 author: "Remco Bekker"
 date: "4-2-2019"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r, echo = FALSE}
@@ -105,12 +107,12 @@ The to be predicted label is a factor with 5 levels. So we are dealing with a cl
 - KNN is not optimal when the number of observations relative to the number of variables is low, but since we train the model with approximately 50 variables and about 15000 observations, it is an option
 - A classification tree based approach is also a good option
 - Since prediction is the goal and not interpretability, a random forest or boosting approach could be used
-- Random forest seems to produce a better accuracy than KNN so I will use the random forest model to predict the 20 cases in the validation set
+- Random forest seems to produce a better accuracy than KNN so I will use the random forest model to predict the 20 cases in the validation set (I did include the KNN model and created a confusionmatrix for it for comparing the accuracy difference)
 - A further extension could be to combine the 2 models but since the accuracy of the random forest model is so high I did not pursue this further
 
 I used cross validation when building the random forest model (10 resampling iterations). Furthermore I have separated the training data into a separate training set and test set. 
 
-```{r, fig.width = 5, fig.height = 7}
+```{r, fig.width = 5, fig.height = 7, dpi = 60}
 ## We train the model
 rfModel <- train(classe ~ ., data = trainingData, ntree = 100, method = "rf", trControl = trainControl(method = "cv", number = 10, verboseIter = FALSE), prox = TRUE)
 knnModel <- train(classe ~ ., data = trainingData, method = "knn", preProcess = c("center", "scale"))
@@ -124,9 +126,16 @@ rfPredictions <- predict(object = rfModel, newdata = testData)
 knnPredictions <- predict(object = knnModel, newdata = testData)
 ```
 
+## Out of sample error
+Now that we have trained the model on the training data, we can determine the out of sample error by applying the model to the test data set and creating a confusion matrix to see the accuracy related statistics. One can see that the random forest model performs better.
+```{r}
+confusionMatrix(rfPredictions, testData$classe)
+confusionMatrix(knnPredictions, testData$classe)
+```
+
 ## Visualizing 2 most important variables
 In the plot below it is shown that the two most important variables as determined by the random frorest algorithm do indeed have a very high explanatory power in terms of the classe label.
-```{r}
+```{r, dpi = 60}
 ## We can plot the 2 most important variables
 importantVariables <- varImp(rfModel)$importance 
 importantVariables$var <- rownames(varImp(rfModel)$importance)
@@ -134,13 +143,6 @@ importantVariables <- importantVariables[order(importantVariables$Overall, decre
 xvar <- rownames(importantVariables)[1]
 yvar <- rownames(importantVariables)[2]
 qplot(x = trainingData[, xvar], y = trainingData[, yvar], xlab = xvar, ylab = yvar, colour = trainingData$classe)
-```
-
-## Out of sample error
-Now that we have trained the model on the training data, we can determine the out of sample error by applying the model to the test data set and creating a confusion matrix to see the accuracy related statistics.
-```{r}
-confusionMatrix(rfPredictions, testData$classe)
-confusionMatrix(knnPredictions, testData$classe)
 ```
 
 ## Validation set predictions
